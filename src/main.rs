@@ -5,9 +5,8 @@
 
 //Modules
 mod helper;
-//Imports
-#[cfg(tests)]
 mod tests;
+//Imports
 use std::cell::{Cell, RefCell};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
