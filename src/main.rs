@@ -11,78 +11,50 @@ use std::cell::{Cell, RefCell};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
-
-
-#[derive(Clone, Copy)]
-enum TransactionStatus {
-    NEW, // New order
-    CAN, // Cancel order
-    FLU, // Flush all orders
-}
-
-enum OutputStatus {
-    ACK, //Acknowledge Bid
-    REJ, //Reject Bid
-    BES, //Best or top of the book change
-    TRA, // Trade
-}
-
 //Helper method to convert status to a readable string for output purposes
-fn output_status_to_str(status: OutputStatus) -> Option<String> {
+fn output_status_to_str(status: helper::types::OutputStatus) -> Option<String> {
     match status {
-        OutputStatus::ACK => Some("A".to_string()),
-        OutputStatus::REJ => Some("R".to_string()),
-        OutputStatus::BES => Some("B".to_string()),
-        OutputStatus::TRA => Some("T".to_string()),
+        helper::types::OutputStatus::ACK => Some("A".to_string()),
+        helper::types::OutputStatus::REJ => Some("R".to_string()),
+        helper::types::OutputStatus::BES => Some("B".to_string()),
+        helper::types::OutputStatus::TRA => Some("T".to_string()),
         _ => None,
     }
 }
 
-#[derive(Copy,Clone,PartialEq)] // So we can do equality comparison when we compare Order sides
-enum Side {
-    BUY,  // BID
-    SELL, // ASK
-}
-
 //Helper method to convert status to a readable string for output purposes
-fn side_to_str(side: Side) -> Option<String> {
+fn side_to_str(side: helper::types::Side) -> Option<String> {
     match side {
-        Side::BUY => Some("A".to_string()),
-        Side::SELL => Some("R".to_string()),
+        helper::types::Side::BUY => Some("A".to_string()),
+        helper::types::Side::SELL => Some("R".to_string()),
         _ => None,
     }
 }
 
 // Helper method to convert unicode character to its equivalent enum type
-fn char_to_side(column : char) -> Option<Side> { 
+fn char_to_side(column : char) -> Option<helper::types::Side> { 
     match column {
-        'A' => Some(Side::BUY),
-        'R' => Some(Side::SELL),
+        'A' => Some(helper::types::Side::BUY),
+        'R' => Some(helper::types::Side::SELL),
         _ => None // Only if we pass an invalid input
     }
 }
 
-//Helper function that only prints to console if compiling in debugging rather than release mode
+//Helper function that only prints to console if compiling in debugging rather than release mode -- will not compile on release if called somewhere in code
 #[cfg(debug_assertions)]
 fn debug_println(input: String) {
     println!("DEBUG: {}", input);
 }
 
-#[derive(Clone,Copy)]
-enum OrderType {
-    MARKET_ORDER, // Buy at the current market price
-    LIMIT_ORDER // Buy at that price level or below that amount
-}
-
 #[derive(Clone)]
 struct Order {
-    status: Cell<TransactionStatus>, // Represents the order type; we use interior mutability to avoid having to pass a mutable reference as mutations have potential for uintended side effects
+    status: Cell<helper::types::TransactionStatus>, // Represents the order type; we use interior mutability to avoid having to pass a mutable reference as mutations have potential for uintended side effects
     client: u64, // Represents the client trading. ⚠️ 64-bit unsigned chosen to support a large amount of bids at the cost of memory and potentially using up more memory bandwith.
     ticker: String, // Represents the security typically stock traded the symbol is called a ticker symbol for example Microsoft is MSFT
     price: u64, // 64-bit unsigned chosen to support a near infinite bidding price.  May not be optimized for all archs.
-    order_type: OrderType, // Represents whether this order will bought at market price or a limit order will be set
+    order_type: helper::types::OrderType, // Represents whether this order will bought at market price or a limit order will be set
     quantity: u64, // 64-bit unsigned chosen to support a near infinite quantity
-    side: Side, // Whether its a buy or sell order
+    side: helper::types::Side, // Whether its a buy or sell order
     order_id: u64, // Represents the unique id for this order. u64 for maximum amount of orders
 }
 
@@ -95,13 +67,13 @@ fn quoted_spread(ask_price: u64, bid_price: u64, midpoint_price: u64) -> u8 {
 
 impl Order {
     fn new(
-        status: TransactionStatus,
+        status: helper::types::TransactionStatus,
         client: u64,
         ticker: String,
         price: u64,
-        order_type: OrderType,
+        order_type: helper::types::OrderType,
         quantity: u64,
-        side: Side,
+        side: helper::types::Side,
         order_id: u64,
     ) -> Self {
         Order {
@@ -121,12 +93,12 @@ impl Order {
     }
 
     //Used to update the Order status from New to Cancel for example
-    fn set_order_status(&self, status: TransactionStatus) {
+    fn set_order_status(&self, status: helper::types::TransactionStatus) {
         self.status.set(status);
     }
 
     //Returns the current state of the Order
-    fn get_order_status(&self) -> TransactionStatus {
+    fn get_order_status(&self) -> helper::types::TransactionStatus {
         self.status.get()
     }
 
@@ -159,13 +131,13 @@ impl Order {
             return std::u64::MAX;
         }
 
-        let ask = if self.side == Side::SELL {
+        let ask = if self.side == helper::types::Side::SELL {
             // Ensure we refer to the ask order object
             self
         } else {
             order
         };
-        let bid = if self.side == Side::SELL {
+        let bid = if self.side == helper::types::Side::SELL {
             // Ensure we refer to the bid order object
             order
         } else {
@@ -196,12 +168,12 @@ impl OrderBook {
     fn build(&self, csv_line : &String) {
         if let Some(order) = Order::from(csv_line) {
             match order.side {
-                Side::BUY => {
+                helper::types::Side::BUY => {
                     //FIXME: Implement insertion logic -- currently inserting AS IS
                     let mut bids = self.bids_ref.borrow_mut();
                     bids.push(order);
                 },
-                Side::SELL => {
+                helper::types::Side::SELL => {
                     //FIXME: Implement insertion logic
                     let mut bids = self.bids_ref.borrow_mut();
                     bids.push(order);
@@ -213,8 +185,8 @@ impl OrderBook {
         }
     }
 
-    fn print_stdout(&self) {
-        println!("Orderbook: {{}}");
+    fn calculate(&self) -> String {
+        String::default()
     }
 
 }
@@ -269,7 +241,7 @@ fn main() {
                 orderbook.build(csv_line);
             }
         }
-        orderbook.print_stdout();
+        println!("Order Book Scenario Output:\n{}",orderbook.calculate());
 
     }
 }
