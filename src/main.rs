@@ -3,10 +3,10 @@
    Kraken Interview: Implement/Architect Order Book
 */
 
-//Modules
+//MODULES:
 mod helper;
 mod tests;
-//Imports
+//IMPORTS:
 use std::cell::{Cell, RefCell};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -25,8 +25,8 @@ fn output_status_to_str(status: helper::types::OutputStatus) -> Option<String> {
 //Helper method to convert status to a readable string for output purposes
 fn side_to_str(side: helper::types::Side) -> Option<String> {
     match side {
-        helper::types::Side::BUY => Some("A".to_string()),
-        helper::types::Side::SELL => Some("R".to_string()),
+        helper::types::Side::BUY => Some("B".to_string()),
+        helper::types::Side::SELL => Some("S".to_string()),
         _ => None,
     }
 }
@@ -38,6 +38,26 @@ fn char_to_side(column : char) -> Option<helper::types::Side> {
         'R' => Some(helper::types::Side::SELL),
         _ => None // Only if we pass an invalid input
     }
+}
+
+//Parses the price column and returns the price level and respective order type -- returns None if it fails to parse
+fn parse_price_line(price_line: &String) -> Option<helper::types::ORDERTYPE_PRICE> {
+
+    if price_line.starts_with("<>") { // Potentially a limit order
+        if let Ok(price_level) = price_line.chars().skip(2).collect::<String>().parse::<u64>() {
+            Some((helper::types::OrderType::LIMIT_ORDER, price_level))
+        }
+        else {
+            None
+        }
+    }
+    else if let Ok(price_level) = price_line.parse::<u64>() { // Parse entire line and assume market order with a valid integer value
+            Some((helper::types::OrderType::MARKET_ORDER, price_level))
+    }
+    else { // Invalid or corrupted input
+        None
+    }
+
 }
 
 //Helper function that only prints to console if compiling in debugging rather than release mode -- will not compile on release if called somewhere in code
@@ -57,8 +77,6 @@ struct Order {
     side: helper::types::Side, // Whether its a buy or sell order
     order_id: u64, // Represents the unique id for this order. u64 for maximum amount of orders
 }
-
-
 
 //Returned as a percent from 0-100 hence the unsigned byte return to save space
 fn quoted_spread(ask_price: u64, bid_price: u64, midpoint_price: u64) -> u8 {
