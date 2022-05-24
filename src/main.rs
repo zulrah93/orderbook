@@ -59,12 +59,19 @@ fn debug_println(input: String) {
     println!("DEBUG: {}", input);
 }
 
+#[derive(Clone,Copy)]
+enum OrderType {
+    MARKET_ORDER, // Buy at the current market price
+    LIMIT_ORDER // Buy at that price level or below that amount
+}
+
 #[derive(Clone)]
 struct Order {
     status: Cell<TransactionStatus>, // Represents the order type; we use interior mutability to avoid having to pass a mutable reference as mutations have potential for uintended side effects
     client: u64, // Represents the client trading. ⚠️ 64-bit unsigned chosen to support a large amount of bids at the cost of memory and potentially using up more memory bandwith.
     ticker: String, // Represents the security typically stock traded the symbol is called a ticker symbol for example Microsoft is MSFT
     price: u64, // 64-bit unsigned chosen to support a near infinite bidding price.  May not be optimized for all archs.
+    order_type: OrderType, // Represents whether this order will bought at market price or a limit order will be set
     quantity: u64, // 64-bit unsigned chosen to support a near infinite quantity
     side: Side, // Whether its a buy or sell order
     order_id: u64, // Represents the unique id for this order. u64 for maximum amount of orders
