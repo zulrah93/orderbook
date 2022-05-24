@@ -130,11 +130,16 @@ impl Order {
             None
         } else {
             //The columns where the data has not been transformed nor has been validated. We use map to convert the &str iterator to a String vector.
-            let raw_column = csv_line
+            let raw_columns = csv_line
                 .split(helper::constants::CSV_COLUMN_SEPARATOR)
                 .map(|column| String::from(column))
                 .collect::<Vec<String>>();
-            None //TODO: Implement logic
+            if raw_columns.len() == helper::constants::ORDER_COLUMN_COUNT {
+                None      //TODO: Replace None with validation of each column
+            }
+            else {
+                None
+            }
         }
     }
 
