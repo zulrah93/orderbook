@@ -1,0 +1,12 @@
+#name: scenario 8
+#descr: balanced book, limit buy partial
+
+# build book, TOB = 10/11
+N, 1, IBM, 10, 100, B, 1
+N, 1, IBM, 12, 100, S, 2
+N, 2, IBM, 9, 100, B, 101
+N, 2, IBM, 11, 100, S, 102
+
+# limit buy, generate reject
+N, 1, IBM, 11, 20, B, 3
+F

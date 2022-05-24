@@ -1,0 +1,12 @@
+#name: scenario 4
+#descr: balanced book, limit below best bid
+
+# build book, TOB = 10/11
+N, 1, IBM, 10, 100, B, 1
+N, 1, IBM, 12, 100, S, 2
+N, 2, IBM, 9, 100, B, 101
+N, 2, IBM, 11, 100, S, 102
+
+# limit below best bid, generate reject
+N, 2, IBM, 9, 100, S, 103
+F

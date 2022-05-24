@@ -1,0 +1,14 @@
+#name: scenario 2
+#descr: shallow bid
+
+# build book, shallow bid, TOB = 10/11
+N, 1, AAPL, 10, 100, B, 1
+N, 1, AAPL, 12, 100, S, 2
+N, 2, AAPL, 11, 100, S, 102
+
+# hit bid, generate reject
+N, 2, AAPL, 10, 100, S, 103
+
+#  increase volume to Bid TOB 10, 200
+N, 1, AAPL, 10, 100, B, 3
+F

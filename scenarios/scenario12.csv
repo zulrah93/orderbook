@@ -1,0 +1,17 @@
+#name: scenario 12
+#descr: balanced book, TOB volume changes
+
+# build book, TOB = 10/11
+N, 1, IBM, 10, 100, B, 1
+N, 1, IBM, 12, 100, S, 2
+N, 2, IBM, 9, 100, B, 101
+N, 2, IBM, 11, 100, S, 102
+
+# increase and decrease the TOB volume
+N, 2, IBM, 11, 100, S, 103
+C, 2, 103
+
+# cancel all asks
+C, 2, 102
+C, 1, 2
+F

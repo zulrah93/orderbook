@@ -1,0 +1,13 @@
+#name: scenario 9
+#descr: balanced book, cancel best bid and offer
+
+# build book, TOB = 10/11
+N, 1, IBM, 10, 100, B, 1
+N, 1, IBM, 12, 100, S, 2
+N, 2, IBM, 9, 100, B, 101
+N, 2, IBM, 11, 100, S, 102
+
+# cancel best bid and offer
+C, 1, 1
+C, 2, 102
+F
