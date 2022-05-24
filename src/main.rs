@@ -11,6 +11,8 @@ use std::cell::{Cell, RefCell};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
+use helper::constants;
+
 //Helper method to convert status to a readable string for output purposes
 fn output_status_to_str(status: helper::types::OutputStatus) -> Option<String> {
     match status {
@@ -106,6 +108,10 @@ impl Order {
         }
     }
 
+    fn is_pk(&self, pk : helper::types::ORDER_PRIMARY_KEY) -> bool { // Useful for filter higher order function (HOF)
+        self.get_pk() == pk
+    }
+
     fn get_pk(&self) -> helper::types::ORDER_PRIMARY_KEY {
         (self.client, self.order_id)
     }
@@ -171,7 +177,7 @@ impl Order {
 struct OrderBook {
     //Using interior mutability but using RefCell since we are going to need a mutable reference to update the queue
     bids_ref: RefCell<Vec<Order>>,
-    asks_ref: RefCell<Vec<Order>>,
+    asks_ref: RefCell<Vec<Order>>
 }
 
 impl OrderBook {
@@ -193,8 +199,8 @@ impl OrderBook {
                 },
                 helper::types::Side::SELL => {
                     //FIXME: Implement insertion logic
-                    let mut bids = self.bids_ref.borrow_mut();
-                    bids.push(order);
+                    let mut asks = self.asks_ref.borrow_mut();
+                    asks.push(order);
                 }
             }
         }
@@ -205,6 +211,15 @@ impl OrderBook {
 
     fn calculate(&self) -> String {
         String::default()
+    }
+
+    fn flush(&self) { // Clears the order book
+        self.bids_ref.borrow_mut().clear();
+        self.asks_ref.borrow_mut().clear();
+    }
+
+    fn cancel_order(pk : helper::types::ORDER_PRIMARY_KEY) { // Cancels the order given a primary key
+
     }
 
 }
