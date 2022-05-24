@@ -53,6 +53,15 @@ fn side_to_str(side: Side) -> Option<String> {
     }
 }
 
+// Helper method to convert unicode character to its equivalent enum type
+fn char_to_side(column : char) -> Option<Side> { 
+    match column {
+        'A' => Some(Side::BUY),
+        'R' => Some(Side::SELL),
+        _ => None // Only if we pass an invalid input
+    }
+}
+
 //Helper function that only prints to console if compiling in debugging rather than release mode
 #[cfg(debug_assertions)]
 fn debug_println(input: String) {
@@ -77,7 +86,7 @@ struct Order {
     order_id: u64, // Represents the unique id for this order. u64 for maximum amount of orders
 }
 
-type ORDER_PRIMARY_KEY = (u64, u64); // Tuple representing the primary key of an Order which will be used when querying for a specific order
+
 
 //Returned as a percent from 0-100 hence the unsigned byte return to save space
 fn quoted_spread(ask_price: u64, bid_price: u64, midpoint_price: u64) -> u8 {
@@ -107,13 +116,8 @@ impl Order {
         }
     }
 
-    fn get_pk(&self) -> ORDER_PRIMARY_KEY {
+    fn get_pk(&self) -> helper::types::ORDER_PRIMARY_KEY {
         (self.client, self.order_id)
-    }
-
-    // Returns true if the Order primary key is a match
-    fn pk_matches(&self, order_pk: ORDER_PRIMARY_KEY) -> bool {
-        (self.client, self.order_id) == order_pk
     }
 
     //Used to update the Order status from New to Cancel for example
