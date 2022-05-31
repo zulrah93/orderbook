@@ -1,6 +1,6 @@
 /*
    Author: Daniel Lopez
-   Kraken Interview: Implement/Architect Order Book
+   Problem: Implement/Architect Order Book
 */
 
 //MODULES:
@@ -10,7 +10,6 @@ mod tests;
 use std::cell::{Cell, RefCell};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::ops::SubAssign;
 
 //TODO: Move interfaces into their own module
 
