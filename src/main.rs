@@ -10,89 +10,30 @@ mod tests;
 use std::cell::{Cell, RefCell};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::ops::SubAssign;
 
-use helper::constants;
-
-//Helper method to convert status to a readable string for output purposes
-fn output_status_to_str(status: helper::types::OutputStatus) -> Option<String> {
-    match status {
-        helper::types::OutputStatus::ACK => Some("A".to_string()),
-        helper::types::OutputStatus::REJ => Some("R".to_string()),
-        helper::types::OutputStatus::BES => Some("B".to_string()),
-        helper::types::OutputStatus::TRA => Some("T".to_string()),
-        _ => None,
-    }
-}
-
-//Helper method to convert status to a readable string for output purposes
-fn side_to_str(side: helper::types::Side) -> Option<String> {
-    match side {
-        helper::types::Side::BUY => Some("B".to_string()),
-        helper::types::Side::SELL => Some("S".to_string()),
-        _ => None,
-    }
-}
-
-// Helper method to convert unicode character to its equivalent enum type
-fn char_to_side(column : char) -> Option<helper::types::Side> { 
-    match column {
-        'A' => Some(helper::types::Side::BUY),
-        'R' => Some(helper::types::Side::SELL),
-        _ => None // Only if we pass an invalid input
-    }
-}
-
-//Parses the price column and returns the price level and respective order type -- returns None if it fails to parse
-fn parse_price_line(price_line: &String) -> Option<helper::types::ORDERTYPE_PRICE> {
-
-    if price_line.starts_with("<>") { // Potentially a limit order
-        if let Ok(price_level) = price_line.chars().skip(2).collect::<String>().parse::<u64>() {
-            Some((helper::types::OrderType::LIMIT_ORDER, price_level))
-        }
-        else {
-            None
-        }
-    }
-    else if let Ok(price_level) = price_line.parse::<u64>() { // Parse entire line and assume market order with a valid integer value
-            Some((helper::types::OrderType::MARKET_ORDER, price_level))
-    }
-    else { // Invalid or corrupted input
-        None
-    }
-
-}
-
-//Helper function that only prints to console if compiling in debugging rather than release mode -- will not compile on release if called somewhere in code
-#[cfg(debug_assertions)]
-fn debug_println(input: String) {
-    println!("DEBUG: {}", input);
-}
+//TODO: Move interfaces into their own module
 
 #[derive(Clone)]
 struct Order {
-    status: Cell<helper::types::TransactionStatus>, // Represents the order type; we use interior mutability to avoid having to pass a mutable reference as mutations have potential for uintended side effects
+    status: Cell<helper::types::TransactionType>, // Represents the order type; we use interior mutability to avoid having to pass a mutable reference as mutations have potential for uintended side effects
     client: u64, // Represents the client trading. ⚠️ 64-bit unsigned chosen to support a large amount of bids at the cost of memory and potentially using up more memory bandwith.
     ticker: String, // Represents the security typically stock traded the symbol is called a ticker symbol for example Microsoft is MSFT
     price: u64, // 64-bit unsigned chosen to support a near infinite bidding price.  May not be optimized for all archs.
     order_type: helper::types::OrderType, // Represents whether this order will bought at market price or a limit order will be set
-    quantity: u64, // 64-bit unsigned chosen to support a near infinite quantity
+    quantity: Cell<u64>, // 64-bit unsigned chosen to support a near infinite quantity 
     side: helper::types::Side, // Whether its a buy or sell order
     order_id: u64, // Represents the unique id for this order. u64 for maximum amount of orders
 }
 
-//Returned as a percent from 0-100 hence the unsigned byte return to save space
-fn quoted_spread(ask_price: u64, bid_price: u64, midpoint_price: u64) -> u8 {
-    (100 * ((ask_price - bid_price) / midpoint_price)) as u8 // Formula from: https://en.wikipedia.org/wiki/Bid%E2%80%93ask_spread
-}
-
 impl Order {
     fn new(
-        status: helper::types::TransactionStatus,
+        status: helper::types::TransactionType,
         client: u64,
         ticker: String,
         price: u64,
         order_type: helper::types::OrderType,
-        quantity: u64,
+        quantity: Cell<u64>,
         side: helper::types::Side,
         order_id: u64,
     ) -> Self {
@@ -108,7 +49,35 @@ impl Order {
         }
     }
 
-    fn is_pk(&self, pk : helper::types::ORDER_PRIMARY_KEY) -> bool { // Useful for filter higher order function (HOF)
+    fn from_serialized_columns(
+        serialized_columns: &helper::types::SERIALIZED_COLUMNS,
+    ) -> Option<Self> {
+        if helper::methods::has_invalid_column(&serialized_columns) {
+            None
+        } else {
+            let (status, client, ticker, type_price, quantity, side, order_id) =
+                serialized_columns.clone();
+            let (order_type, price) = type_price.unwrap();
+            helper::methods::debug_println(format!(
+                "[Price: ${}, Type: {}]",
+                price,
+                helper::methods::order_type_to_string(order_type)
+            ));
+            Some(Order::new(
+                status.unwrap(),
+                client.unwrap(),
+                ticker.unwrap(),
+                price,
+                order_type,
+                Cell::new(quantity.unwrap()),
+                side.unwrap(),
+                order_id.unwrap(),
+            ))
+        }
+    }
+
+    fn is_pk(&self, pk: helper::types::ORDER_PRIMARY_KEY) -> bool {
+        // Useful for filter higher order function (HOF)
         self.get_pk() == pk
     }
 
@@ -116,17 +85,28 @@ impl Order {
         (self.client, self.order_id)
     }
 
+    //Updates the quantity of the order
+    fn update_quantity(&self, new_quantity : u64) {
+        self.quantity.set(new_quantity);
+    }
+
+    //Checks if the order is completly fufilled
+    fn is_empty(&self) -> bool {
+        self.quantity.get() > 0
+    }
+
     //Used to update the Order status from New to Cancel for example
-    fn set_order_status(&self, status: helper::types::TransactionStatus) {
+    fn set_order_status(&self, status: helper::types::TransactionType) {
         self.status.set(status);
     }
 
     //Returns the current state of the Order
-    fn get_order_status(&self) -> helper::types::TransactionStatus {
+    fn get_order_status(&self) -> helper::types::TransactionType {
         self.status.get()
     }
 
     // Parses the current CSV line will return None if current line is a comment, corrupted/invalid, or information is incomplete
+    // Note: Only parses a new order a cancel order is checked before calling this
     fn from(csv_line: &String) -> Option<Self> {
         if csv_line.starts_with(helper::constants::SKIP_LINE_CHAR) {
             None
@@ -134,92 +114,135 @@ impl Order {
             //The columns where the data has not been transformed nor has been validated. We use map to convert the &str iterator to a String vector.
             let raw_columns = csv_line
                 .split(helper::constants::CSV_COLUMN_SEPARATOR)
-                .map(|column| String::from(column))
+                .map(helper::methods::trim_string) // Avoid any whitespaces in our columns
                 .collect::<Vec<String>>();
-            if raw_columns.len() == helper::constants::ORDER_COLUMN_COUNT {
-                None      //TODO: Replace None with validation of each column
-            }
-            else {
+            helper::methods::debug_println(format!("raw_columns: {:?}", raw_columns));
+            if raw_columns.len() == helper::constants::NEW_ORDER_COLUMN_COUNT {
+                // Grab the indivdual column data in their raw format -- some we only care about the first character if the information is encoded in a byte
+                let order_type_char = raw_columns[0].chars().next().unwrap_or_default();
+                let client_name_raw = &raw_columns[1];
+                let ticker = &raw_columns[2].to_string();
+                let price_line_raw = &raw_columns[3];
+                let quantity_raw = &raw_columns[4];
+                let side_char = raw_columns[5].chars().next().unwrap_or_default();
+                let order_id_raw = &raw_columns[6];
+                let serialized_columns: helper::types::SERIALIZED_COLUMNS = (
+                    helper::methods::char_to_transaction_type(order_type_char),
+                    helper::methods::parse_u64_from(client_name_raw),
+                    Some(ticker.to_string()),
+                    helper::methods::parse_price_line(price_line_raw),
+                    helper::methods::parse_u64_from(quantity_raw),
+                    helper::methods::char_to_side(side_char),
+                    helper::methods::parse_u64_from(order_id_raw),
+                );
+                Order::from_serialized_columns(&serialized_columns)
+            } else {
                 None
             }
         }
     }
+}
 
-    fn csv_output(&self) -> String {
-        format!("") //TODO: Deserialize to String so that it maybe used for standard output
+/*
+ So we can use vec.sort() and avoid having to use vec.sort_by()
+*/
+impl PartialEq for Order {
+    fn eq(&self, other: &Self) -> bool {
+        self.get_pk().eq(&other.get_pk())
     }
+}
+impl Eq for Order {}
 
-    fn spread(&self, order: &Order) -> u64 {
-        // Special case in the event we calculate the spread of an order on the same side should not happen in normal circumstances
-        if self.side == order.side {
-            return std::u64::MAX;
-        }
-
-        let ask = if self.side == helper::types::Side::SELL {
-            // Ensure we refer to the ask order object
-            self
-        } else {
-            order
-        };
-        let bid = if self.side == helper::types::Side::SELL {
-            // Ensure we refer to the bid order object
-            order
-        } else {
-            self
-        };
-
-        ask.price - bid.price
+impl PartialOrd for Order {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
+impl Ord for Order {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.price.cmp(&other.price)
+    }
+}
 
 // Represents a traditional order book found in a stock exchange like NYSE
 struct OrderBook {
-    //Using interior mutability but using RefCell since we are going to need a mutable reference to update the queue
+    //Using interior mutability but using RefCell since we are going to need a mutable reference to update the bids/asks and store the result for standard output
     bids_ref: RefCell<Vec<Order>>,
-    asks_ref: RefCell<Vec<Order>>
+    asks_ref: RefCell<Vec<Order>>,
+    std_out: RefCell<String>,
+}
+
+impl Default for OrderBook {
+    fn default() -> Self {
+        Self {
+            bids_ref: RefCell::new(vec![]),
+            asks_ref: RefCell::new(vec![]),
+            std_out: RefCell::new(String::default()),
+        }
+    }
 }
 
 impl OrderBook {
     //Constructs an empty order book no bids or asks placed
     fn new() -> Self {
-        OrderBook {
-            bids_ref: RefCell::new(vec![]),
-            asks_ref: RefCell::new(vec![]),
-        }
+        OrderBook::default()
     }
 
-    fn build(&self, csv_line : &String) {
+    fn build(&self, csv_line: &String) {
+        helper::methods::debug_println(format!("Current CSV Line: {}", csv_line));
         if let Some(order) = Order::from(csv_line) {
             match order.side {
                 helper::types::Side::BUY => {
-                    //FIXME: Implement insertion logic -- currently inserting AS IS
+                    //TODO: Use a more efficient algorithm if time permits
                     let mut bids = self.bids_ref.borrow_mut();
                     bids.push(order);
-                },
+                    bids.sort() // This sort is stable (i.e., does not reorder equal elements) and O(n * log(n)) worst-case. Source: https://doc.rust-lang.org/stable/std/vec/struct.Vec.html#method.sort
+                }
                 helper::types::Side::SELL => {
-                    //FIXME: Implement insertion logic
+                    //TODO: Use a more efficient algorithm if time permits
                     let mut asks = self.asks_ref.borrow_mut();
                     asks.push(order);
+                    asks.sort(); // This sort is stable (i.e., does not reorder equal elements) and O(n * log(n)) worst-case. Source: https://doc.rust-lang.org/stable/std/vec/struct.Vec.html#method.sort
                 }
             }
-        }
-        else {
-            debug_println("FAILED TO PARSE LINE".to_string());
+        } else {
+            helper::methods::debug_println("FAILED TO PARSE LINE".to_string());
         }
     }
 
-    fn calculate(&self) -> String {
-        String::default()
-    }
-
-    fn flush(&self) { // Clears the order book
+    fn reformat(&self) {
+        // Flushes the order book
         self.bids_ref.borrow_mut().clear();
         self.asks_ref.borrow_mut().clear();
     }
 
-    fn cancel_order(pk : helper::types::ORDER_PRIMARY_KEY) { // Cancels the order given a primary key
+    //Used for final results
+    fn std_output(&self) -> String {
+        self.std_out.borrow().clone() // We don't want to move the shared reference out so we clone. Space complexitiy is O(L) where L is the length of the string
+    }
 
+    fn cancel_order(&self, pk: helper::types::ORDER_PRIMARY_KEY) {
+        // Cancels the order given a primary key
+        let mut bids = self.bids_ref.borrow_mut();
+        let mut asks = self.asks_ref.borrow_mut();
+        if let Some(deletion_index) = bids
+            .iter()
+            .enumerate()
+            .filter(|o| o.1.is_pk(pk))
+            .map(|x| x.0)
+            .next()
+        {
+            bids.remove(deletion_index);
+        } else if let Some(deletion_index) = asks
+            .iter()
+            .enumerate()
+            .filter(|o| o.1.is_pk(pk))
+            .map(|x| x.0)
+            .next()
+        {
+            asks.remove(deletion_index);
+        }
     }
 
 }
@@ -227,12 +250,19 @@ impl OrderBook {
 //Stores the application arguments passed by the user
 #[derive(Default, Debug)]
 struct OrderBookConfiguration {
-    orderbook_path: Option<String> // Input file that represents an orderbook in CSV format
+    orderbook_path: Option<String>, // Input file that represents an orderbook in CSV format
 }
 
 impl OrderBookConfiguration {
-    fn open(&self) -> Result<File, ()> {
-        Err(())
+    fn open(&self) -> Result<File, std::io::Error> {
+        if let Some(path) = self.orderbook_path.as_ref() {
+            File::open(path)
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "File not found or invalid path was given!",
+            ))
+        }
     }
 
     fn new(input_path: &str) -> Self {
@@ -260,13 +290,9 @@ fn get_user_input() -> OrderBookConfiguration {
 }
 
 fn main() {
-
     let args = get_user_input();
-
-    debug_println(format!("args = {:?}", args));
-
+    helper::methods::debug_println(format!("args = {:?}", args));
     if let Ok(csv_file) = args.open() {
-
         let reader = BufReader::new(csv_file);
         let orderbook = OrderBook::new();
         for result in reader.lines() {
@@ -274,7 +300,5 @@ fn main() {
                 orderbook.build(csv_line);
             }
         }
-        println!("Order Book Scenario Output:\n{}",orderbook.calculate());
-
     }
 }

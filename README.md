@@ -1,4 +1,4 @@
-# Order Book Implementation in Rust for Kraken Interview
+# Order Book Implementation in Rust
 
 This is a barebones implementation of a order book found in a typical stock exchange like NYSE
 
@@ -11,7 +11,7 @@ cargo build --release
 # How to Run An Example Order Book
 
 ```
-cargo run --release -- --orderbook orderbook1.csv
+cargo run --release -- --orderbook scenarios.csv
 ```
 
 
